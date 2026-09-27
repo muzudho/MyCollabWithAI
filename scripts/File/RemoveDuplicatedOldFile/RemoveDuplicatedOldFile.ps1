@@ -30,8 +30,29 @@ function Get-Md5([string]$path) {
     }
 }
 
-# 入力前に TrashCan を用意します。CSV 名は同じフォルダー内のファイル名だけを受け付けます。
-[System.IO.Directory]::CreateDirectory($trash) | Out-Null
+function Remove-EmptySourceDirectories([string]$sourcePath, [string]$rootDirectoryPrefix) {
+    $directory = [System.IO.Path]::GetDirectoryName((ConvertTo-ExtendedPath $sourcePath))
+    $removed = 0
+    while ($directory.StartsWith($rootDirectoryPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        # 空でない場所やリンク先には触れず、空のディレクトリーだけを非再帰で削除します。
+        if (([System.IO.File]::GetAttributes($directory) -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            break
+        }
+        $enumerator = [System.IO.Directory]::EnumerateFileSystemEntries($directory).GetEnumerator()
+        try {
+            $hasEntries = $enumerator.MoveNext()
+        } finally {
+            $enumerator.Dispose()
+        }
+        if ($hasEntries) { break }
+        [System.IO.Directory]::Delete($directory, $false)
+        $removed++
+        $directory = [System.IO.Path]::GetDirectoryName($directory)
+    }
+    return $removed
+}
+
+# CSV 名は対象フォルダー内のファイル名だけを受け付けます。
 if (-not $PSBoundParameters.ContainsKey('CsvFileName')) {
     $CsvFileName = Read-Host 'CSV ファイル名を入力してください [FileHashList.csv]'
 }
@@ -57,6 +78,7 @@ if ($header -cnotmatch '^"?MD5"?,"?ファイルパス"?,"?ファイル作成日�
 $rows = @(Import-Csv -LiteralPath $csvPath -Encoding UTF8)
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 $rootPrefix = $root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
+$extendedRootPrefix = (ConvertTo-ExtendedPath $root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 $trashPrefix = $trash.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # 全行を先に検査し、CSV のパスが作業ディレクトリー外へ出ないようにします。
@@ -94,8 +116,22 @@ $entries = foreach ($row in $rows) {
     }
 }
 
+Write-Output '同名・同サイズで MD5 が一致するファイルは、（意図的に複数用意してるものであっても）作成日時が最も新しい 1 件を残します。'
+Write-Output '古いファイルを TrashCan に移動し、移動後に空になった元のフォルダーも削除します。'
+while ($true) {
+    $answer = Read-Host '続行しますか？ [Y/n]'
+    if ([string]::IsNullOrWhiteSpace($answer) -or $answer -imatch '^(y|yes)$') { break }
+    if ($answer -imatch '^(n|no)$') {
+        Write-Output '中止しました。'
+        return
+    }
+    Write-Output 'Y または n を入力してください。'
+}
+[System.IO.Directory]::CreateDirectory($trash) | Out-Null
+
 $log = New-Object 'System.Collections.Generic.List[string]'
 $moved = 0
+$removedDirectories = 0
 foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })) {
     $members = @($group.Group | Sort-Object -Property @{ Expression = 'Created'; Descending = $true },
         @{ Expression = 'Relative'; Descending = $false })
@@ -140,6 +176,12 @@ foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object
             Write-Output "移動しました: $($member.Relative)"
         } catch {
             $log.Add("移動失敗: $($member.Relative) : $($_.Exception.Message)")
+            continue
+        }
+        try {
+            $removedDirectories += Remove-EmptySourceDirectories $member.Source $extendedRootPrefix
+        } catch {
+            $log.Add("空フォルダーの削除失敗: $($member.Relative) : $($_.Exception.Message)")
         }
     }
 }
@@ -148,4 +190,4 @@ if ($log.Count -gt 0) {
     [System.IO.File]::WriteAllText($logPath, (($log.ToArray() -join "`r`n") + "`r`n"), $utf8WithoutBom)
     Write-Output "ログを出力しました: $logPath ($($log.Count) 件)"
 }
-Write-Output "処理完了: $moved 件を TrashCan へ移動しました。"
+Write-Output "処理完了: $moved 件を TrashCan へ移動し、空のフォルダーを $removedDirectories 件削除しました。"
