@@ -34,8 +34,8 @@ if (Test-Path -LiteralPath $scanErrorLogPath -PathType Leaf) {
 }
 
 $header = Get-Content -LiteralPath $csvPath -Encoding UTF8 -TotalCount 1
-if ($header -cnotmatch '^"?SHA256"?,"?ファイルパス"?,"?ファイル作成日時"?$') {
-    throw 'CSV には「SHA256,ファイルパス,ファイル作成日時」の見出しが必要です。'
+if ($header -cnotmatch '^"?MD5"?,"?ファイルパス"?,"?ファイル作成日時"?$') {
+    throw 'CSV には「MD5,ファイルパス,ファイル作成日時」の見出しが必要です。FileHashList.ps1 で CSV を作り直してください。'
 }
 $rows = @(Import-Csv -LiteralPath $csvPath -Encoding UTF8)
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -44,11 +44,11 @@ $trashPrefix = $trash.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorCh
 
 # 全行を先に検査し、CSV のパスが作業ディレクトリー外へ出ないようにします。
 $entries = foreach ($row in $rows) {
-    $hash = $row.SHA256
+    $hash = $row.MD5
     $relative = $row.'ファイルパス'
     $created = $row.'ファイル作成日時'
-    if ($hash -cnotmatch '^[0-9a-fA-F]{64}$') {
-        throw "SHA256 の形式が正しくありません: $hash"
+    if ($hash -cnotmatch '^[0-9a-fA-F]{32}$') {
+        throw "MD5 の形式が正しくありません: $hash"
     }
     if ([string]::IsNullOrWhiteSpace($relative) -or
         [System.IO.Path]::IsPathRooted($relative) -or
@@ -68,28 +68,37 @@ $entries = foreach ($row in $rows) {
         [System.Globalization.DateTimeStyles]::None, [ref]$date)) {
         throw "ファイル作成日時の形式が正しくありません: $created"
     }
-    [pscustomobject]@{ Hash = $hash.ToLowerInvariant(); Relative = $relative; Source = $source; Created = $date }
+    [pscustomobject]@{
+        Hash = $hash.ToLowerInvariant()
+        Name = [System.IO.Path]::GetFileName($source)
+        Relative = $relative
+        Source = $source
+        Created = $date
+    }
 }
 
 $log = New-Object 'System.Collections.Generic.List[string]'
 $moved = 0
-foreach ($group in @($entries | Group-Object -Property Hash | Where-Object { $_.Count -ge 2 })) {
+foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })) {
     $members = @($group.Group | Sort-Object -Property @{ Expression = 'Created'; Descending = $true },
         @{ Expression = 'Relative'; Descending = $false })
 
     # CSV 作成後にファイルが変わっていたら、このグループには触れません。
     $valid = $true
+    $expectedLength = $null
     foreach ($member in $members) {
         try {
             $file = Get-Item -LiteralPath $member.Source -ErrorAction Stop
+            if ($null -eq $expectedLength) { $expectedLength = $file.Length }
             if ($file.PSIsContainer -or
                 ($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+                $file.Length -ne $expectedLength -or
                 $file.CreationTime.ToString('yyyy-MM-dd HH:mm:ss',
                     [System.Globalization.CultureInfo]::InvariantCulture) -cne
                     $member.Created.ToString('yyyy-MM-dd HH:mm:ss',
                         [System.Globalization.CultureInfo]::InvariantCulture) -or
-                (Get-FileHash -LiteralPath $member.Source -Algorithm SHA256 -ErrorAction Stop).Hash -ine $member.Hash) {
-                throw 'ファイルの種類、作成日時、またはハッシュが CSV と一致しません。'
+                (Get-FileHash -LiteralPath $member.Source -Algorithm MD5 -ErrorAction Stop).Hash -ine $member.Hash) {
+                throw 'ファイルの種類、サイズ、作成日時、または MD5 が CSV と一致しません。'
             }
         } catch {
             $log.Add("スキップ: $($member.Relative) : $($_.Exception.Message)")

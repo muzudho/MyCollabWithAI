@@ -13,13 +13,14 @@ $errorLogPath = Join-Path $root 'FileHashList.errors.log'
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 $issues = New-Object 'System.Collections.Generic.List[string]'
 $scanErrors = @()
+$scanCount = 0
 $count = 0
 
 Write-Output "探索を開始します: $root"
-Write-Output 'NAS では全ファイルの読み取りが終わるまで時間がかかる場合があります。'
+Write-Output 'まずファイル名とサイズで候補を絞ります。'
 
 # 移動済みのファイルと前回の出力は、次回の重複判定に含めません。
-$entries = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction Continue -ErrorVariable +scanErrors |
+$files = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction Continue -ErrorVariable +scanErrors |
     Where-Object {
         ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0 -and
         -not $_.FullName.StartsWith((Join-Path $root 'TrashCan') + [System.IO.Path]::DirectorySeparatorChar,
@@ -30,12 +31,32 @@ $entries = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction
         -not [string]::Equals($_.FullName, $errorLogPath, [System.StringComparison]::OrdinalIgnoreCase)
     } |
     ForEach-Object {
+        $scanCount++
+        if ($scanCount % 100 -eq 0) {
+            Write-Progress -Activity 'ファイル名とサイズを探索中' -Status "$scanCount 件を確認"
+        }
+        $_
+    })
+Write-Progress -Activity 'ファイル名とサイズを探索中' -Completed
+foreach ($scanError in $scanErrors) {
+    $issues.Add("探索失敗: $($scanError.ToString())")
+}
+
+# 同じ basename とサイズのファイルだけをハッシュ計算の対象にします。
+$candidates = @($files | Group-Object -Property Name, Length |
+    Where-Object { $_.Count -ge 2 } |
+    ForEach-Object { $_.Group })
+Write-Output "探索したファイル: $($files.Count) 件 / MD5 計算候補: $($candidates.Count) 件"
+
+$entries = @($candidates | ForEach-Object {
         $file = $_
         $count++
-        Write-Progress -Activity 'ファイルの SHA-256 を計算中' -Status "$count 件: $($file.FullName)"
+        Write-Progress -Activity 'ファイルの MD5 を計算中' -Status "$count / $($candidates.Count) 件: $($file.FullName)" -PercentComplete (100 * $count / $candidates.Count)
         try {
             [pscustomobject]@{
-                Hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+                Hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm MD5 -ErrorAction Stop).Hash.ToLowerInvariant()
+                Name = $file.Name
+                Length = $file.Length
                 Path = $file.FullName.Substring($root.Length).TrimStart('\', '/')
                 Created = $file.CreationTime.ToString('yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
             }
@@ -43,19 +64,16 @@ $entries = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction
             $issues.Add("ハッシュ計算失敗: $($file.FullName) : $($_.Exception.Message)")
         }
     })
-Write-Progress -Activity 'ファイルの SHA-256 を計算中' -Completed
-foreach ($scanError in $scanErrors) {
-    $issues.Add("探索失敗: $($scanError.ToString())")
-}
+Write-Progress -Activity 'ファイルの MD5 を計算中' -Completed
 
-# ハッシュ順に並べると、同じ内容のファイルが CSV 上で連続します。
-$rows = @($entries | Group-Object -Property Hash |
+# 同名・同サイズ・同ハッシュのグループだけを CSV に出します。
+$rows = @($entries | Group-Object -Property Hash, Name, Length |
     Where-Object { $_.Count -ge 2 } |
     Sort-Object -Property Name |
     ForEach-Object { $_.Group | Sort-Object -Property Path } |
     ForEach-Object {
         [pscustomobject][ordered]@{
-            'SHA256' = $_.Hash
+            'MD5' = $_.Hash
             'ファイルパス' = $_.Path
             'ファイル作成日時' = $_.Created
         }
@@ -63,7 +81,7 @@ $rows = @($entries | Group-Object -Property Hash |
 
 # 空の場合も見出しだけの CSV を出力します。
 $lines = if ($rows.Count -eq 0) {
-    @('"SHA256","ファイルパス","ファイル作成日時"')
+    @('"MD5","ファイルパス","ファイル作成日時"')
 } else {
     @($rows | ConvertTo-Csv -NoTypeInformation)
 }

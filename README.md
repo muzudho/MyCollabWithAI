@@ -11,8 +11,8 @@
 
 （１） 📄 `FileHashList.ps1`  
 このスクリプトを実行したら、このスクリプトが置いてあるディレクトリーにあるサブディレクトリーや、ファイルを探索し、  
-MD5 ハッシュ値を計算してくれだぜ（＾▽＾）  
-もっといいハッシュ計算方法があれば、そっちでもいいぜ（＾▽＾）  
+その後、  
+ファイルの basename と、ファイルサイズが一致しているファイルについて、 MD5 ハッシュ値を計算してくれだぜ（＾▽＾）  
 ほんでハッシュ値、ファイルパス、ファイルの作成日時を CSV 形式で出力してくれだぜ（＾▽＾）
 ハッシュ値別にグループ化してくれだぜ（＾▽＾）  
 ほんで、要素を２つ以上持つグループだけを抽出してくれだぜ（＾▽＾）  
@@ -36,6 +36,12 @@ TrashCan というフォルダーを作ってくれだぜ（＾▽＾）
 そんで、スクリプトの中にはコメントを書いておいてくれだぜ（＾▽＾）  
 作ったらとりあえずリポジトリーの scripts フォルダーに `File/RemoveDuplicatedOldFile` フォルダーを作って、その下に置いておいてくれだぜ（＾～＾）  
 
+
+［ー＿ー］  
+PowerShell スクリプトの実行を許可させる時は、以下のようにしてくれだぜ［ー＿ー］  
+```powershell
+powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File "D:\github.com\muzudho\MyCollabWithAI\scripts\File\RemoveDuplicatedOldFile\FileHashList.ps1" -RootPath "Z:\muzudho-private-history\muzudho_backups"
+```
 
 ## 回答チャット
 
