@@ -21,6 +21,18 @@ function ConvertTo-ExtendedPath([string]$path) {
     return '\\?\' + $path
 }
 
+function ConvertFrom-ExtendedPath([string]$path) {
+    if ($path.StartsWith('\\?\UNC\')) { return '\\' + $path.Substring(8) }
+    if ($path.StartsWith('\\?\')) { return $path.Substring(4) }
+    return $path
+}
+
+function Show-ScanStatus([string]$directory) {
+    if ($scanStatusTimer.ElapsedMilliseconds -lt 4000) { return }
+    Write-Host "探索中 ($scanCount 件): $(ConvertFrom-ExtendedPath $directory)"
+    $scanStatusTimer.Restart()
+}
+
 function Get-Md5([string]$path) {
     $stream = [System.IO.File]::OpenRead($path)
     $md5 = [System.Security.Cryptography.MD5]::Create()
@@ -40,10 +52,13 @@ $files = New-Object 'System.Collections.Generic.List[object]'
 $directories = New-Object 'System.Collections.Generic.Stack[string]'
 $directories.Push((ConvertTo-ExtendedPath $root))
 $trashPath = ConvertTo-ExtendedPath (Join-Path $root 'TrashCan')
+$scanStatusTimer = [System.Diagnostics.Stopwatch]::StartNew()
 while ($directories.Count -gt 0) {
     $directory = $directories.Pop()
+    Show-ScanStatus $directory
     try {
         foreach ($path in [System.IO.Directory]::EnumerateFileSystemEntries($directory)) {
+            Show-ScanStatus $directory
             try {
                 $attributes = [System.IO.File]::GetAttributes($path)
                 if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
@@ -53,11 +68,7 @@ while ($directories.Count -gt 0) {
                     }
                     continue
                 }
-                $normalPath = if ($path.StartsWith('\\?\UNC\')) {
-                    '\\' + $path.Substring(8)
-                } else {
-                    $path.Substring(4)
-                }
+                $normalPath = ConvertFrom-ExtendedPath $path
                 if ([string]::Equals($normalPath, $csvPath, [System.StringComparison]::OrdinalIgnoreCase) -or
                     [string]::Equals($normalPath, (Join-Path $root 'RemoveDuplicatedOldFile.log'),
                         [System.StringComparison]::OrdinalIgnoreCase) -or
@@ -74,9 +85,6 @@ while ($directories.Count -gt 0) {
                         [System.Globalization.CultureInfo]::InvariantCulture)
                 })
                 $scanCount++
-                if ($scanCount % 100 -eq 0) {
-                    Write-Progress -Activity 'ファイル名とサイズを探索中' -Status "$scanCount 件を確認"
-                }
             } catch {
                 $issues.Add("ファイル情報の取得失敗: $path : $($_.Exception.Message)")
             }
@@ -85,7 +93,6 @@ while ($directories.Count -gt 0) {
         $issues.Add("探索失敗: $directory : $($_.Exception.Message)")
     }
 }
-Write-Progress -Activity 'ファイル名とサイズを探索中' -Completed
 
 # 同じ basename とサイズのファイルだけをハッシュ計算の対象にします。
 $candidates = @($files | Group-Object -Property Name, Length |
@@ -93,10 +100,14 @@ $candidates = @($files | Group-Object -Property Name, Length |
     ForEach-Object { $_.Group })
 Write-Output "探索したファイル: $($files.Count) 件 / MD5 計算候補: $($candidates.Count) 件"
 
+$hashStatusTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $entries = @($candidates | ForEach-Object {
         $file = $_
         $count++
-        Write-Progress -Activity 'ファイルの MD5 を計算中' -Status "$count / $($candidates.Count) 件: $($file.FullName)" -PercentComplete (100 * $count / $candidates.Count)
+        if ($count -eq 1 -or $hashStatusTimer.ElapsedMilliseconds -ge 4000) {
+            Write-Host "MD5 計算中 ($count / $($candidates.Count) 件): $($file.FullName)"
+            $hashStatusTimer.Restart()
+        }
         try {
             [pscustomobject]@{
                 Hash = Get-Md5 $file.ExtendedPath
@@ -109,7 +120,6 @@ $entries = @($candidates | ForEach-Object {
             $issues.Add("ハッシュ計算失敗: $($file.FullName) : $($_.Exception.Message)")
         }
     })
-Write-Progress -Activity 'ファイルの MD5 を計算中' -Completed
 
 # 同名・同サイズ・同ハッシュのグループだけを CSV に出します。
 $rows = @($entries | Group-Object -Property Hash, Name, Length |
