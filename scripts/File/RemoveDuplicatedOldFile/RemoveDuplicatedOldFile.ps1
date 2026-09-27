@@ -132,7 +132,15 @@ while ($true) {
 $log = New-Object 'System.Collections.Generic.List[string]'
 $moved = 0
 $removedDirectories = 0
-foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })) {
+$processed = 0
+$statusShown = $false
+$moveStatusTimer = [System.Diagnostics.Stopwatch]::StartNew()
+$groups = @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })
+$candidateCount = 0
+foreach ($group in $groups) { $candidateCount += $group.Count - 1 }
+Write-Output "移動候補: $candidateCount 件"
+
+foreach ($group in $groups) {
     $members = @($group.Group | Sort-Object -Property @{ Expression = 'Created'; Descending = $true },
         @{ Expression = 'Relative'; Descending = $false })
 
@@ -158,10 +166,19 @@ foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object
             $valid = $false
         }
     }
-    if (-not $valid) { continue }
+    if (-not $valid) {
+        $processed += $members.Count - 1
+        continue
+    }
 
     # 最新の 1 件を残し、古いファイルだけ元の相対パスで TrashCan へ移します。
     foreach ($member in @($members | Select-Object -Skip 1)) {
+        $processed++
+        if (-not $statusShown -or $moveStatusTimer.ElapsedMilliseconds -ge 4000) {
+            Write-Host "処理中 ($processed / $candidateCount 件): $($member.Relative)"
+            $moveStatusTimer.Restart()
+            $statusShown = $true
+        }
         $destination = Join-Path $trash $member.Relative
         $extendedDestination = ConvertTo-ExtendedPath $destination
         if ([System.IO.File]::Exists($extendedDestination) -or
@@ -173,7 +190,6 @@ foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object
             [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($extendedDestination)) | Out-Null
             [System.IO.File]::Move((ConvertTo-ExtendedPath $member.Source), $extendedDestination)
             $moved++
-            Write-Output "移動しました: $($member.Relative)"
         } catch {
             $log.Add("移動失敗: $($member.Relative) : $($_.Exception.Message)")
             continue
