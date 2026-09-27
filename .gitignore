@@ -1,3 +1,15 @@
 # (^q^)
-.vs
+
+# Visual Studio user settings and generated files
+.vs/
+*.suo
+*.user
+*.vssettings
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# .NET build and test output
+bin/
 obj/
+TestResults/

@@ -39,9 +39,13 @@ TrashCan というフォルダーを作ってくれだぜ（＾▽＾）
 
 ［ー＿ー］  
 PowerShell スクリプトの実行を許可させる時は、以下のようにしてくれだぜ［ー＿ー］  
-```powershell
-powershell.exe -NoProfile -NoExit -ExecutionPolicy Bypass -File "D:\github.com\muzudho\MyCollabWithAI\scripts\File\RemoveDuplicatedOldFile\FileHashList.ps1" -RootPath "Z:\muzudho-private-history\muzudho_backups"
+
+📄 `OpenPowerShellHere.cmd` をダブルクリック。  
+
+```cmd
+.\FileHashList.ps1 -RootPath 'Z:\muzudho-private-history\muzudho_backups'
 ```
+
 
 ## 回答チャット
 
