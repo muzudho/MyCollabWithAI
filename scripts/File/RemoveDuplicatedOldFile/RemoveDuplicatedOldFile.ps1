@@ -1,10 +1,16 @@
 ﻿[CmdletBinding()]
-param([string]$CsvFileName)
+param([string]$CsvFileName, [string]$RootPath)
 
 $ErrorActionPreference = 'Stop'
-$root = $PSScriptRoot
+# FileHashList.ps1 と同じ対象フォルダーを使います。
+if ([string]::IsNullOrWhiteSpace($RootPath)) { $RootPath = $PSScriptRoot }
+$root = (Get-Item -LiteralPath $RootPath -ErrorAction Stop).FullName
+if (-not (Test-Path -LiteralPath $root -PathType Container)) {
+    throw "対象フォルダーがありません: $RootPath"
+}
 $trash = Join-Path $root 'TrashCan'
 $logPath = Join-Path $root 'RemoveDuplicatedOldFile.log'
+$scanErrorLogPath = Join-Path $root 'FileHashList.errors.log'
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 
 # 入力前に TrashCan を用意します。CSV 名は同じフォルダー内のファイル名だけを受け付けます。
@@ -22,6 +28,9 @@ if ([System.IO.Path]::GetFileName($CsvFileName) -cne $CsvFileName -or
 $csvPath = Join-Path $root $CsvFileName
 if (-not (Test-Path -LiteralPath $csvPath -PathType Leaf)) {
     throw "CSV ファイルがありません: $csvPath"
+}
+if (Test-Path -LiteralPath $scanErrorLogPath -PathType Leaf) {
+    throw "探索時に読み取りエラーがありました。移動前にログを確認して、FileHashList.ps1 を再実行してください: $scanErrorLogPath"
 }
 
 $header = Get-Content -LiteralPath $csvPath -Encoding UTF8 -TotalCount 1
