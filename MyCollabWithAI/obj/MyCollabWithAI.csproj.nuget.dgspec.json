@@ -1,20 +1,24 @@
 {
   "format": 1,
   "restore": {
-    "C:\\MuzudhoProjects\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj": {}
+    "D:\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj": {}
   },
   "projects": {
-    "C:\\MuzudhoProjects\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj": {
+    "D:\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\MuzudhoProjects\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj",
+        "projectUniqueName": "D:\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj",
         "projectName": "MyCollabWithAI",
-        "projectPath": "C:\\MuzudhoProjects\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj",
+        "projectPath": "D:\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\MyCollabWithAI.csproj",
         "packagesPath": "C:\\Users\\muzud\\.nuget\\packages\\",
-        "outputPath": "C:\\MuzudhoProjects\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\obj\\",
+        "outputPath": "D:\\github.com\\muzudho\\MyCollabWithAI\\MyCollabWithAI\\obj\\",
         "projectStyle": "PackageReference",
+        "fallbackFolders": [
+          "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
+        ],
         "configFilePaths": [
           "C:\\Users\\muzud\\AppData\\Roaming\\NuGet\\NuGet.Config",
+          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
           "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
         ],
         "originalTargetFrameworks": [
@@ -68,6 +72,24 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[9.0.20, 9.0.20]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Host.win-x64",
+              "version": "[9.0.20, 9.0.20]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[9.0.20, 9.0.20]"
+            },
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[9.0.20, 9.0.20]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
               "privateAssets": "all"

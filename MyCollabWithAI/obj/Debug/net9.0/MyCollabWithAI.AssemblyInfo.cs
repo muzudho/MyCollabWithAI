@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MyCollabWithAI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+85b7c3061534e8c88adda205e138d8d729b10766")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a833fd306a2984814feaaaafa9720999714e0574")]
 [assembly: System.Reflection.AssemblyProductAttribute("MyCollabWithAI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MyCollabWithAI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
