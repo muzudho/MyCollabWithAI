@@ -12,35 +12,80 @@ $csvPath = Join-Path $root 'FileHashList.csv'
 $errorLogPath = Join-Path $root 'FileHashList.errors.log'
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 $issues = New-Object 'System.Collections.Generic.List[string]'
-$scanErrors = @()
 $scanCount = 0
 $count = 0
+
+function ConvertTo-ExtendedPath([string]$path) {
+    if ($path.StartsWith('\\?\')) { return $path }
+    if ($path.StartsWith('\\')) { return '\\?\UNC\' + $path.Substring(2) }
+    return '\\?\' + $path
+}
+
+function Get-Md5([string]$path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    try {
+        return [System.BitConverter]::ToString($md5.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $md5.Dispose()
+        $stream.Dispose()
+    }
+}
 
 Write-Output "探索を開始します: $root"
 Write-Output 'まずファイル名とサイズで候補を絞ります。'
 
-# 移動済みのファイルと前回の出力は、次回の重複判定に含めません。
-$files = @(Get-ChildItem -LiteralPath $root -File -Recurse -Force -ErrorAction Continue -ErrorVariable +scanErrors |
-    Where-Object {
-        ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0 -and
-        -not $_.FullName.StartsWith((Join-Path $root 'TrashCan') + [System.IO.Path]::DirectorySeparatorChar,
-            [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not [string]::Equals($_.FullName, $csvPath, [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not [string]::Equals($_.FullName, (Join-Path $root 'RemoveDuplicatedOldFile.log'),
-            [System.StringComparison]::OrdinalIgnoreCase) -and
-        -not [string]::Equals($_.FullName, $errorLogPath, [System.StringComparison]::OrdinalIgnoreCase)
-    } |
-    ForEach-Object {
-        $scanCount++
-        if ($scanCount % 100 -eq 0) {
-            Write-Progress -Activity 'ファイル名とサイズを探索中' -Status "$scanCount 件を確認"
+# 長いパスでも列挙できるよう、拡張パスで各ディレクトリーをたどります。
+$files = New-Object 'System.Collections.Generic.List[object]'
+$directories = New-Object 'System.Collections.Generic.Stack[string]'
+$directories.Push((ConvertTo-ExtendedPath $root))
+$trashPath = ConvertTo-ExtendedPath (Join-Path $root 'TrashCan')
+while ($directories.Count -gt 0) {
+    $directory = $directories.Pop()
+    try {
+        foreach ($path in [System.IO.Directory]::EnumerateFileSystemEntries($directory)) {
+            try {
+                $attributes = [System.IO.File]::GetAttributes($path)
+                if (($attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+                if (($attributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+                    if (-not [string]::Equals($path, $trashPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $directories.Push($path)
+                    }
+                    continue
+                }
+                $normalPath = if ($path.StartsWith('\\?\UNC\')) {
+                    '\\' + $path.Substring(8)
+                } else {
+                    $path.Substring(4)
+                }
+                if ([string]::Equals($normalPath, $csvPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    [string]::Equals($normalPath, (Join-Path $root 'RemoveDuplicatedOldFile.log'),
+                        [System.StringComparison]::OrdinalIgnoreCase) -or
+                    [string]::Equals($normalPath, $errorLogPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    continue
+                }
+                $info = New-Object System.IO.FileInfo($path)
+                $files.Add([pscustomobject]@{
+                    FullName = $normalPath
+                    ExtendedPath = $path
+                    Name = $info.Name
+                    Length = $info.Length
+                    Created = $info.CreationTime.ToString('yyyy-MM-dd HH:mm:ss',
+                        [System.Globalization.CultureInfo]::InvariantCulture)
+                })
+                $scanCount++
+                if ($scanCount % 100 -eq 0) {
+                    Write-Progress -Activity 'ファイル名とサイズを探索中' -Status "$scanCount 件を確認"
+                }
+            } catch {
+                $issues.Add("ファイル情報の取得失敗: $path : $($_.Exception.Message)")
+            }
         }
-        $_
-    })
-Write-Progress -Activity 'ファイル名とサイズを探索中' -Completed
-foreach ($scanError in $scanErrors) {
-    $issues.Add("探索失敗: $($scanError.ToString())")
+    } catch {
+        $issues.Add("探索失敗: $directory : $($_.Exception.Message)")
+    }
 }
+Write-Progress -Activity 'ファイル名とサイズを探索中' -Completed
 
 # 同じ basename とサイズのファイルだけをハッシュ計算の対象にします。
 $candidates = @($files | Group-Object -Property Name, Length |
@@ -54,11 +99,11 @@ $entries = @($candidates | ForEach-Object {
         Write-Progress -Activity 'ファイルの MD5 を計算中' -Status "$count / $($candidates.Count) 件: $($file.FullName)" -PercentComplete (100 * $count / $candidates.Count)
         try {
             [pscustomobject]@{
-                Hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm MD5 -ErrorAction Stop).Hash.ToLowerInvariant()
+                Hash = Get-Md5 $file.ExtendedPath
                 Name = $file.Name
                 Length = $file.Length
                 Path = $file.FullName.Substring($root.Length).TrimStart('\', '/')
-                Created = $file.CreationTime.ToString('yyyy-MM-dd HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+                Created = $file.Created
             }
         } catch {
             $issues.Add("ハッシュ計算失敗: $($file.FullName) : $($_.Exception.Message)")

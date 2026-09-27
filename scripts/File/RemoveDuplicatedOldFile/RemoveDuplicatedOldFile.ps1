@@ -13,6 +13,23 @@ $logPath = Join-Path $root 'RemoveDuplicatedOldFile.log'
 $scanErrorLogPath = Join-Path $root 'FileHashList.errors.log'
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 
+function ConvertTo-ExtendedPath([string]$path) {
+    if ($path.StartsWith('\\?\')) { return $path }
+    if ($path.StartsWith('\\')) { return '\\?\UNC\' + $path.Substring(2) }
+    return '\\?\' + $path
+}
+
+function Get-Md5([string]$path) {
+    $stream = [System.IO.File]::OpenRead($path)
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    try {
+        return [System.BitConverter]::ToString($md5.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $md5.Dispose()
+        $stream.Dispose()
+    }
+}
+
 # 入力前に TrashCan を用意します。CSV 名は同じフォルダー内のファイル名だけを受け付けます。
 [System.IO.Directory]::CreateDirectory($trash) | Out-Null
 if (-not $PSBoundParameters.ContainsKey('CsvFileName')) {
@@ -52,11 +69,11 @@ $entries = foreach ($row in $rows) {
     }
     if ([string]::IsNullOrWhiteSpace($relative) -or
         [System.IO.Path]::IsPathRooted($relative) -or
-        $relative -match '^[a-zA-Z]:' -or
-        $relative -match '(^|[\\/])\.\.([\\/]|$)') {
+        $relative -match ':' -or
+        $relative -match '(^|[\\/])\.{1,2}([\\/]|$)') {
         throw "ファイルパスが不正です: $relative"
     }
-    $source = [System.IO.Path]::GetFullPath((Join-Path $root $relative))
+    $source = Join-Path $root $relative
     if (-not $source.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
         $source.StartsWith($trashPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
         -not $seen.Add($source)) {
@@ -88,16 +105,16 @@ foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object
     $expectedLength = $null
     foreach ($member in $members) {
         try {
-            $file = Get-Item -LiteralPath $member.Source -ErrorAction Stop
+            $file = New-Object System.IO.FileInfo((ConvertTo-ExtendedPath $member.Source))
+            if (-not $file.Exists) { throw '元ファイルがありません。' }
             if ($null -eq $expectedLength) { $expectedLength = $file.Length }
-            if ($file.PSIsContainer -or
-                ($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            if (($file.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or
                 $file.Length -ne $expectedLength -or
                 $file.CreationTime.ToString('yyyy-MM-dd HH:mm:ss',
                     [System.Globalization.CultureInfo]::InvariantCulture) -cne
                     $member.Created.ToString('yyyy-MM-dd HH:mm:ss',
                         [System.Globalization.CultureInfo]::InvariantCulture) -or
-                (Get-FileHash -LiteralPath $member.Source -Algorithm MD5 -ErrorAction Stop).Hash -ine $member.Hash) {
+                (Get-Md5 (ConvertTo-ExtendedPath $member.Source)) -ine $member.Hash) {
                 throw 'ファイルの種類、サイズ、作成日時、または MD5 が CSV と一致しません。'
             }
         } catch {
@@ -110,13 +127,15 @@ foreach ($group in @($entries | Group-Object -Property Hash, Name | Where-Object
     # 最新の 1 件を残し、古いファイルだけ元の相対パスで TrashCan へ移します。
     foreach ($member in @($members | Select-Object -Skip 1)) {
         $destination = Join-Path $trash $member.Relative
-        if (Test-Path -LiteralPath $destination) {
+        $extendedDestination = ConvertTo-ExtendedPath $destination
+        if ([System.IO.File]::Exists($extendedDestination) -or
+            [System.IO.Directory]::Exists($extendedDestination)) {
             $log.Add("衝突: $($member.Relative) -> $destination")
             continue
         }
         try {
-            [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($destination)) | Out-Null
-            [System.IO.File]::Move($member.Source, $destination)
+            [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($extendedDestination)) | Out-Null
+            [System.IO.File]::Move((ConvertTo-ExtendedPath $member.Source), $extendedDestination)
             $moved++
             Write-Output "移動しました: $($member.Relative)"
         } catch {
