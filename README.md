@@ -40,13 +40,15 @@ TrashCan というフォルダーを作ってくれだぜ（＾▽＾）
 作ったらとりあえずリポジトリーの scripts フォルダーに `File/RemoveDuplicatedOldFile` フォルダーを作って、その下に置いておいてくれだぜ（＾～＾）  
 
 
+## 応答
+
 ［ー＿ー］  
 PowerShell スクリプトの実行を許可させる時は、以下のようにしてくれだぜ［ー＿ー］  
 
 📄 `OpenPowerShellHere.cmd` をダブルクリック。  
 
 ```cmd
-.\FileHashList.ps1 -RootPath 'Z:\muzudho-private-history\muzudho_backups'
+.\FileHashList.ps1 -RootPath 'Z:\muzudho-private-history\muzudho_backups\accounting'
 ```
 
 
