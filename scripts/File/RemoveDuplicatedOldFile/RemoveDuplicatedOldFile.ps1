@@ -76,6 +76,7 @@ if ($header -cnotmatch '^"?MD5"?,"?ファイルパス"?,"?ファイル作成日�
     throw 'CSV には「MD5,ファイルパス,ファイル作成日時」の見出しが必要です。FileHashList.ps1 で CSV を作り直してください。'
 }
 $rows = @(Import-Csv -LiteralPath $csvPath -Encoding UTF8)
+Write-Output "CSV 読み込み完了: $($rows.Count) 件（ヘッダーを除く）"
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 $rootPrefix = $root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 $extendedRootPrefix = (ConvertTo-ExtendedPath $root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
@@ -116,6 +117,10 @@ $entries = foreach ($row in $rows) {
     }
 }
 
+$groups = @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })
+$candidateCount = 0
+foreach ($group in $groups) { $candidateCount += $group.Count - 1 }
+Write-Output "移動候補: $candidateCount 件"
 Write-Output '同名・同サイズで MD5 が一致するファイルは、（意図的に複数用意してるものであっても）作成日時が最も新しい 1 件を残します。'
 Write-Output '古いファイルを TrashCan に移動し、移動後に空になった元のフォルダーも削除します。'
 while ($true) {
@@ -135,10 +140,6 @@ $removedDirectories = 0
 $processed = 0
 $statusShown = $false
 $moveStatusTimer = [System.Diagnostics.Stopwatch]::StartNew()
-$groups = @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })
-$candidateCount = 0
-foreach ($group in $groups) { $candidateCount += $group.Count - 1 }
-Write-Output "移動候補: $candidateCount 件"
 
 foreach ($group in $groups) {
     $members = @($group.Group | Sort-Object -Property @{ Expression = 'Created'; Descending = $true },
