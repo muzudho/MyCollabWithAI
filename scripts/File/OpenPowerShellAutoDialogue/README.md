@@ -28,3 +28,5 @@
 ```
 
 別の JSON を使う場合は `-DialoguePath 'C:\path\to\dialogue.json'` を指定します。通常の文字列入力を使う `Read-Host` に対応しています。既定の待機時間は全体で 3600 秒です。長い処理には `-TimeoutSeconds 86400` のように指定してください。
+
+対象スクリプトが期待した応答より前に終了した場合は、対象スクリプトのエラーを表示します。たとえば `RemoveDuplicatedOldFile.ps1` では、`FileHashList.csv` がない場合や `FileHashList.errors.log` が残っている場合に処理を止めます。

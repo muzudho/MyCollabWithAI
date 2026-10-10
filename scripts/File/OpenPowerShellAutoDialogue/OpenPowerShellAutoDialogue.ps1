@@ -77,7 +77,19 @@ function Wait-ForText([string]$pattern, [bool]$regex) {
         if ($script:readTask.Wait(100)) {
             $count = $script:readTask.Result
             $script:readTask = $null
-            if ($count -eq 0) { throw "応答が出る前に終了しました: $pattern" }
+            if ($count -eq 0) {
+                # 標準エラーを先に回収し、対象スクリプトが終了した理由を表示します。
+                $remaining = [Math]::Max(1, [int](($TimeoutSeconds - $clock.Elapsed.TotalSeconds) * 1000))
+                if (-not $process.WaitForExit($remaining)) {
+                    throw "対象スクリプトの出力が閉じられました。期待した応答: $pattern"
+                }
+                $detail = $errorTask.GetAwaiter().GetResult().Trim()
+                $exitCode = $process.ExitCode
+                if ($detail.Length -gt 0) {
+                    [Console]::Error.WriteLine("対象スクリプトのエラー:`n$detail")
+                }
+                throw "対象スクリプトが終了しました (終了コード: $exitCode)。期待した応答: $pattern"
+            }
             $part = New-Object string ($buffer, 0, $count)
             [void]$output.Append($part)
             Write-Host -NoNewline $part
