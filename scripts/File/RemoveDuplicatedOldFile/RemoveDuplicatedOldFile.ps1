@@ -13,6 +13,10 @@ $logPath = Join-Path $root 'RemoveDuplicatedOldFile.log'
 $scanErrorLogPath = Join-Path $root 'FileHashList.errors.log'
 $utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
 
+function Write-Status([string]$message) {
+    Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $message"
+}
+
 function ConvertTo-ExtendedPath([string]$path) {
     if ($path.StartsWith('\\?\')) { return $path }
     if ($path.StartsWith('\\')) { return '\\?\UNC\' + $path.Substring(2) }
@@ -76,7 +80,7 @@ if ($header -cnotmatch '^"?MD5"?,"?ファイルパス"?,"?ファイル作成日�
     throw 'CSV には「MD5,ファイルパス,ファイル作成日時」の見出しが必要です。FileHashList.ps1 で CSV を作り直してください。'
 }
 $rows = @(Import-Csv -LiteralPath $csvPath -Encoding UTF8)
-Write-Output "CSV 読み込み完了: $($rows.Count) 件（ヘッダーを除く）"
+Write-Status "CSV 読み込み完了: $($rows.Count) 件（ヘッダーを除く）"
 $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 $rootPrefix = $root.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 $extendedRootPrefix = (ConvertTo-ExtendedPath $root).TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
@@ -120,18 +124,21 @@ $entries = foreach ($row in $rows) {
 $groups = @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })
 $candidateCount = 0
 foreach ($group in $groups) { $candidateCount += $group.Count - 1 }
-Write-Output "移動候補: $candidateCount 件"
+Write-Status "移動候補: $candidateCount 件"
 Write-Output '同名・同サイズで MD5 が一致するファイルは、（意図的に複数用意してるものであっても）作成日時が最も新しい 1 件を残します。'
 Write-Output '古いファイルを TrashCan に移動し、移動後に空になった元のフォルダーも削除します。'
 while ($true) {
     $answer = Read-Host '続行しますか？ [Y/n]'
     if ([string]::IsNullOrWhiteSpace($answer) -or $answer -imatch '^(y|yes)$') { break }
     if ($answer -imatch '^(n|no)$') {
-        Write-Output '中止しました。'
+        Write-Status '中止しました。'
         return
     }
     Write-Output 'Y または n を入力してください。'
 }
+# 所要時間は続行確認後から計測し、入力待ちの時間は含めません。
+$processingTimer = [System.Diagnostics.Stopwatch]::StartNew()
+Write-Status '処理開始'
 [System.IO.Directory]::CreateDirectory($trash) | Out-Null
 
 $log = New-Object 'System.Collections.Generic.List[string]'
@@ -176,7 +183,7 @@ foreach ($group in $groups) {
     foreach ($member in @($members | Select-Object -Skip 1)) {
         $processed++
         if (-not $statusShown -or $moveStatusTimer.ElapsedMilliseconds -ge 4000) {
-            Write-Host "処理中 ($processed / $candidateCount 件): $($member.Relative)"
+            Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] 処理中 ($processed / $candidateCount 件): $($member.Relative)"
             $moveStatusTimer.Restart()
             $statusShown = $true
         }
@@ -205,6 +212,8 @@ foreach ($group in $groups) {
 
 if ($log.Count -gt 0) {
     [System.IO.File]::WriteAllText($logPath, (($log.ToArray() -join "`r`n") + "`r`n"), $utf8WithoutBom)
-    Write-Output "ログを出力しました: $logPath ($($log.Count) 件)"
+    Write-Status "ログを出力しました: $logPath ($($log.Count) 件)"
 }
-Write-Output "処理完了: $moved 件を TrashCan へ移動し、空のフォルダーを $removedDirectories 件削除しました。"
+$processingTimer.Stop()
+$elapsed = $processingTimer.Elapsed
+Write-Status "処理完了: $moved 件を TrashCan へ移動し、空のフォルダーを $removedDirectories 件削除しました。所要時間: $([Math]::Floor($elapsed.TotalMinutes)) 分 $($elapsed.Seconds) 秒"
