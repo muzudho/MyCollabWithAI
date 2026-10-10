@@ -29,4 +29,12 @@
 
 別の JSON を使う場合は `-DialoguePath 'C:\path\to\dialogue.json'` を指定します。通常の文字列入力を使う `Read-Host` に対応しています。既定の待機時間は全体で 3600 秒です。長い処理には `-TimeoutSeconds 86400` のように指定してください。
 
+対象スクリプトのワーキングディレクトリーを指定する場合は `-WorkingDirectory` を使います。対象スクリプトが相対パスで読み書きするファイルは、このフォルダーを基準に扱われます。
+
+```powershell
+.\OpenPowerShellAutoDialogue.ps1 -WorkingDirectory 'Z:\muzudho-private-history\muzudho_backups\document-a'
+```
+
+指定するフォルダーは存在している必要があります。相対パスで指定した場合は、呼び出し元の現在のフォルダーを基準に解決します。省略時は従来どおり起動元のワーキングディレクトリーを引き継ぎます。`-DialoguePath` と、JSON の最初の `request` に書くスクリプトパスの解決方法は変わりません（相対スクリプトパスは JSON のあるフォルダーが基準です）。
+
 対象スクリプトが期待した応答より前に終了した場合は、対象スクリプトのエラーを表示します。たとえば `RemoveDuplicatedOldFile.ps1` では、`FileHashList.csv` がない場合や `FileHashList.errors.log` が残っている場合に処理を止めます。

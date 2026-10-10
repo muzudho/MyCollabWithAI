@@ -2,10 +2,20 @@
 [CmdletBinding()]
 param(
     [string]$DialoguePath = (Join-Path $PSScriptRoot 'OpenPowerShellAutoDialogue.json'),
-    [ValidateRange(1, 86400)][int]$TimeoutSeconds = 3600
+    [ValidateRange(1, 86400)][int]$TimeoutSeconds = 3600,
+    [ValidateNotNullOrEmpty()][string]$WorkingDirectory
 )
 
 $ErrorActionPreference = 'Stop'
+$resolvedWorkingDirectory = $null
+if ($PSBoundParameters.ContainsKey('WorkingDirectory')) {
+    $directory = Resolve-Path -LiteralPath $WorkingDirectory -ErrorAction Stop
+    if ($directory.Provider.Name -ne 'FileSystem' -or
+        -not (Test-Path -LiteralPath $directory.ProviderPath -PathType Container)) {
+        throw "WorkingDirectory にはファイルシステムのフォルダーを指定してください: $WorkingDirectory"
+    }
+    $resolvedWorkingDirectory = $directory.ProviderPath
+}
 $jsonPath = (Resolve-Path -LiteralPath $DialoguePath -ErrorAction Stop).ProviderPath
 $items = @((Get-Content -LiteralPath $jsonPath -Raw -Encoding UTF8 | ConvertFrom-Json).dialogue)
 if ($items.Count -eq 0) { throw 'dialogue に項目がありません。' }
@@ -47,6 +57,7 @@ $safeTarget = $target.Replace("'", "''")
 $command = '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false); function Read-Host { param([string]$Prompt) [Console]::Write($Prompt + '': ''); [Console]::ReadLine() }; & ''' + $safeTarget + ''''
 $info.Arguments = '-NoProfile -ExecutionPolicy Bypass -Command "' + $command + '"'
 $info.UseShellExecute = $false
+if ($null -ne $resolvedWorkingDirectory) { $info.WorkingDirectory = $resolvedWorkingDirectory }
 $info.CreateNoWindow = $true
 $info.RedirectStandardInput = $true
 $info.RedirectStandardOutput = $true
