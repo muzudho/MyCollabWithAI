@@ -87,7 +87,11 @@ $extendedRootPrefix = (ConvertTo-ExtendedPath $root).TrimEnd('\', '/') + [System
 $trashPrefix = $trash.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar
 
 # 全行を先に検査し、CSV のパスが作業ディレクトリー外へ出ないようにします。
-$entries = foreach ($row in $rows) {
+$groupIndex = New-Object 'System.Collections.Generic.Dictionary[string,System.Collections.Generic.List[object]]' ([System.StringComparer]::OrdinalIgnoreCase)
+$checkedRows = 0
+$classificationTimer = [System.Diagnostics.Stopwatch]::StartNew()
+Write-Status 'CSV の検査・重複分類を開始'
+foreach ($row in $rows) {
     $hash = $row.MD5
     $relative = $row.'ファイルパス'
     $created = $row.'ファイル作成日時'
@@ -112,16 +116,35 @@ $entries = foreach ($row in $rows) {
         [System.Globalization.DateTimeStyles]::None, [ref]$date)) {
         throw "ファイル作成日時の形式が正しくありません: $created"
     }
-    [pscustomobject]@{
+    $entry = [pscustomobject]@{
         Hash = $hash.ToLowerInvariant()
         Name = [System.IO.Path]::GetFileName($source)
         Relative = $relative
         Source = $source
         Created = $date
     }
+    # MD5 は固定長なので、区切り文字を含むファイル名でもキーは衝突しません。
+    # 全件を Group-Object に渡さず、各行を辞書に一度だけ登録します。
+    $key = $entry.Hash + ':' + $entry.Name
+    $bucket = $null
+    if (-not $groupIndex.TryGetValue($key, [ref]$bucket)) {
+        $bucket = New-Object 'System.Collections.Generic.List[object]'
+        $groupIndex.Add($key, $bucket)
+    }
+    $bucket.Add($entry)
+    $checkedRows++
+    if ($checkedRows -eq 1 -or $classificationTimer.ElapsedMilliseconds -ge 4000) {
+        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] CSV 検査・分類中 ($checkedRows / $($rows.Count) 件): $relative"
+        $classificationTimer.Restart()
+    }
 }
 
-$groups = @($entries | Group-Object -Property Hash, Name | Where-Object { $_.Count -ge 2 })
+$groups = @(foreach ($bucket in $groupIndex.Values) {
+    if ($bucket.Count -ge 2) {
+        [pscustomobject]@{ Count = $bucket.Count; Group = $bucket }
+    }
+})
+Write-Status "CSV の検査・重複分類完了: $checkedRows 件、重複 $($groups.Count) グループ"
 $candidateCount = 0
 foreach ($group in $groups) { $candidateCount += $group.Count - 1 }
 Write-Status "移動候補: $candidateCount 件"
